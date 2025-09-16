@@ -57,37 +57,40 @@ assets.sound(path) → Pygame mixer 활용
 기본 이미지/애니메이션 처리
 
 설치 및 실행
-pip install pygame-ce
-git clone <repo_url>
-cd piig
-python -m examples.ui_showcase
+
+    pip install pygame-ce
+    git clone <repo_url>
+    cd piig
+    python -m examples.ui_showcase
 
 예제
-import pygame
-from piig import UI, ThemeManager
 
-pygame.init()
-screen = pygame.display.set_mode((960,540))
-clock = pygame.time.Clock()
-ui = UI()
-theme = ThemeManager()
+    import pygame
+    from piig import UI, ThemeManager
+    
+    pygame.init()
+    screen = pygame.display.set_mode((960,540))
+    clock = pygame.time.Clock()
+    ui = UI()
+    theme = ThemeManager()
+    
+    running=True
+    while running:
+        events = pygame.event.get()
+        for e in events:
+            if e.type==pygame.QUIT: running=False
+    
+        screen.fill((18,18,20))
+        ui.begin(screen, events)
+        if ui.button(20,60,160,36,"Apply Theme"):
+            theme.apply(ui)
+        ui.end()
+    
+        pygame.display.flip()
+        clock.tick(60)
+    
+    pygame.quit()
 
-running=True
-while running:
-    events = pygame.event.get()
-    for e in events:
-        if e.type==pygame.QUIT: running=False
-
-    screen.fill((18,18,20))
-    ui.begin(screen, events)
-    if ui.button(20,60,160,36,"Apply Theme"):
-        theme.apply(ui)
-    ui.end()
-
-    pygame.display.flip()
-    clock.tick(60)
-
-pygame.quit()
 
 장점
 
