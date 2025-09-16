@@ -1,0 +1,320 @@
+# 이게 piig 사용안한거
+  import pygame
+  pygame.init()
+  
+  # ---------- Minimal UI (pure pygame) ----------
+  class UI:
+      def __init__(self, font_name=None, font_size=22):
+          self.events = []
+          self.font = pygame.font.SysFont(font_name, font_size)
+          self.focus = None         # ('textbox', id) 등
+          self.state = {}           # 위젯별 상태 저장
+          self.dropdown_open = None # ('dropdown', id)
+  
+      def set_events(self, events):
+          self.events = events
+  
+      def _get(self, key, default):
+          if key not in self.state:
+              self.state[key] = default.copy() if isinstance(default, dict) else default
+          return self.state[key]
+  
+      def _hover(self, rect, pos):
+          return rect.collidepoint(pos)
+  
+      def text(self, screen, s, x, y, color=(230,230,230)):
+          surf = self.font.render(str(s), True, color)
+          screen.blit(surf, (x, y))
+  
+      def button(self, screen, rect, label):
+          r = pygame.Rect(rect)
+          mx, my = pygame.mouse.get_pos()
+          hovered = r.collidepoint(mx, my)
+          pressed = any(e.type==pygame.MOUSEBUTTONDOWN and e.button==1 and r.collidepoint(e.pos) for e in self.events)
+  
+          bg = (70,120,200) if hovered else (60,60,80)
+          pygame.draw.rect(screen, bg, r, border_radius=6)
+          pygame.draw.rect(screen, (30,30,40), r, 2, border_radius=6)
+  
+          ts = self.font.render(label, True, (255,255,255))
+          screen.blit(ts, (r.x + (r.w-ts.get_width())//2, r.y + (r.h-ts.get_height())//2))
+          return pressed
+  
+      def toggle(self, screen, rect, label, value):
+          r = pygame.Rect(rect)
+          key = ('toggle', r.x, r.y, r.w, r.h, label)
+          st = self._get(key, {'value': bool(value)})
+  
+          clicked = any(e.type==pygame.MOUSEBUTTONDOWN and e.button==1 and r.collidepoint(e.pos) for e in self.events)
+          changed = False
+          if clicked:
+              st['value'] = not st['value']
+              changed = True
+  
+          bg = (50,50,60)
+          pygame.draw.rect(screen, bg, r, border_radius=6)
+          # switch
+          sw = pygame.Rect(r.x+8, r.y+8, r.h-16, r.h-16)
+          if st['value']:
+              sw.x = r.right - sw.w - 8
+              col = (80,200,120)
+          else:
+              col = (120,120,120)
+          pygame.draw.rect(screen, (35,35,45), r, 2, border_radius=6)
+          pygame.draw.rect(screen, col, sw, border_radius=sw.h//2)
+  
+          self.text(screen, f"{label}: {'ON' if st['value'] else 'OFF'}", r.right+10, r.y+(r.h-22)//2)
+          return st['value'], changed
+  
+      def textbox(self, screen, rect, text):
+          r = pygame.Rect(rect)
+          key = ('textbox', r.x, r.y, r.w, r.h)
+          st = self._get(key, {'text': str(text), 'caret': len(str(text)), 'focus': False, 'blink':0})
+  
+          # focus
+          for e in self.events:
+              if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                  st['focus'] = r.collidepoint(e.pos)
+                  if st['focus']:
+                      pygame.key.start_text_input()
+                  else:
+                      pygame.key.stop_text_input()
+  
+          changed = False
+          # typing
+          for e in self.events:
+              if not st['focus']:
+                  continue
+              if e.type == pygame.TEXTINPUT:
+                  ins = e.text
+                  st['text'] = st['text'][:st['caret']] + ins + st['text'][st['caret']:]
+                  st['caret'] += len(ins)
+                  changed = True
+              elif e.type == pygame.KEYDOWN:
+                  if e.key == pygame.K_BACKSPACE and st['caret']>0:
+                      st['text'] = st['text'][:st['caret']-1] + st['text'][st['caret']:]
+                      st['caret'] -= 1
+                      changed = True
+                  elif e.key == pygame.K_DELETE and st['caret'] < len(st['text']):
+                      st['text'] = st['text'][:st['caret']] + st['text'][st['caret']+1:]
+                      changed = True
+                  elif e.key == pygame.K_LEFT:
+                      st['caret'] = max(0, st['caret']-1)
+                  elif e.key == pygame.K_RIGHT:
+                      st['caret'] = min(len(st['text']), st['caret']+1)
+                  elif e.key == pygame.K_HOME:
+                      st['caret'] = 0
+                  elif e.key == pygame.K_END:
+                      st['caret'] = len(st['text'])
+  
+          # draw
+          pygame.draw.rect(screen, (28,28,34), r, border_radius=6)
+          pygame.draw.rect(screen, (50,50,70) if st['focus'] else (35,35,45), r, 2, border_radius=6)
+          ts = self.font.render(st['text'], True, (240,240,240))
+          screen.blit(ts, (r.x+8, r.y+(r.h-ts.get_height())//2))
+  
+          # caret blink
+          st['blink'] = (st['blink']+1) % 60
+          if st['focus'] and st['blink'] < 30:
+              caret_x = r.x + 8 + self.font.size(st['text'][:st['caret']])[0]
+              pygame.draw.line(screen, (255,255,255), (caret_x, r.y+8), (caret_x, r.bottom-8), 1)
+  
+          return st['text'], changed
+  
+      def slider(self, screen, rect, value):
+          r = pygame.Rect(rect)
+          key = ('slider', r.x, r.y, r.w, r.h)
+          st = self._get(key, {'v': float(value), 'drag': False})
+  
+          for e in self.events:
+              if e.type == pygame.MOUSEBUTTONDOWN and e.button==1 and r.collidepoint(e.pos):
+                  st['drag'] = True
+              elif e.type == pygame.MOUSEBUTTONUP and e.button==1:
+                  st['drag'] = False
+              elif e.type == pygame.MOUSEMOTION and st['drag']:
+                  nx = (e.pos[0] - r.x) / max(1, r.w)
+                  st['v'] = min(1.0, max(0.0, nx))
+  
+          # draw
+          pygame.draw.rect(screen, (40,40,52), r, border_radius=6)
+          fill = pygame.Rect(r.x, r.y, int(r.w*st['v']), r.h)
+          pygame.draw.rect(screen, (90,140,220), fill, border_radius=6)
+          knob = pygame.Rect(r.x + int(r.w*st['v']) - 6, r.y-4, 12, r.h+8)
+          pygame.draw.rect(screen, (200,200,220), knob, border_radius=6)
+          return st['v'], True  # 변경 플래그 단순화
+  
+      def dropdown(self, screen, rect, options, current):
+          r = pygame.Rect(rect)
+          key = ('dropdown', r.x, r.y, r.w, r.h)
+          st = self._get(key, {'open': False, 'value': current})
+  
+          # open/close
+          for e in self.events:
+              if e.type == pygame.MOUSEBUTTONDOWN and e.button==1:
+                  if r.collidepoint(e.pos):
+                      st['open'] = not st['open']
+                  else:
+                      # 바깥 클릭 닫기
+                      if st['open']:
+                          st['open'] = False
+  
+          changed = False
+          # draw main
+          pygame.draw.rect(screen, (40,40,52), r, border_radius=6)
+          pygame.draw.rect(screen, (35,35,45), r, 2, border_radius=6)
+          self.text(screen, str(st['value']), r.x+8, r.y+6)
+  
+          # list
+          if st['open']:
+              item_h = r.h
+              list_rect = pygame.Rect(r.x, r.bottom+2, r.w, item_h*len(options))
+              pygame.draw.rect(screen, (30,30,38), list_rect, border_radius=6)
+              for i, opt in enumerate(options):
+                  ir = pygame.Rect(r.x, r.bottom+2 + i*item_h, r.w, item_h)
+                  hovered = any(ir.collidepoint(e.pos) for e in self.events if e.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN))
+                  pygame.draw.rect(screen, (60,60,80) if hovered else (45,45,60), ir)
+                  self.text(screen, str(opt), ir.x+8, ir.y+6)
+                  # pick
+                  for e in self.events:
+                      if e.type==pygame.MOUSEBUTTONDOWN and e.button==1 and ir.collidepoint(e.pos):
+                          st['value'] = opt
+                          st['open'] = False
+                          changed = True
+  
+          return st['value'], changed
+  
+  
+  # ---------- Camera / Rhythm ----------
+  class Camera:
+      def __init__(self):
+          self.zoom_level = 1.0
+  
+  class RhythmClock:
+      def __init__(self, bpm=120, offset=0.0):
+          self.bpm = float(bpm)
+          self.offset = float(offset)
+          self.start = pygame.time.get_ticks()
+  
+      def get_time(self):
+          return (pygame.time.get_ticks() - self.start)/1000.0 + self.offset
+  
+      def get_beat(self):
+          spb = 60.0 / max(1e-6, self.bpm)
+          return self.get_time() / spb
+  
+  
+  # ---------- Demo using only pygame ----------
+  def main():
+      screen = pygame.display.set_mode((960, 540))
+      pygame.display.set_caption("pure pygame demo")
+      clock = pygame.time.Clock()
+  
+      ui = UI()
+      camera = Camera()
+      rc = RhythmClock(bpm=120)
+  
+      power_on = True
+      text_value = "Hello"
+      slider_val = 0.5
+      dropdown_choice = "Option 1"
+  
+      running = True
+      while running:
+          events = pygame.event.get()
+          for e in events:
+              if e.type == pygame.QUIT:
+                  running = False
+              elif e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                  running = False
+  
+          ui.set_events(events)
+          screen.fill((25,25,28))
+  
+          ui.text(screen, "Pure pygame UI Demo", 20, 20)
+          # button
+          if ui.button(screen, (20, 60, 160, 36), "Apply Theme"):
+              pass  # 테마 없음. 눌림 테스트만.
+  
+          # toggle
+          power_on, _ = ui.toggle(screen, (20, 110, 160, 36), "Power", power_on)
+  
+          # textbox
+          text_value, _ = ui.textbox(screen, (20, 160, 200, 36), text_value)
+  
+          # slider
+          slider_val, _ = ui.slider(screen, (20, 210, 200, 20), slider_val)
+  
+          # dropdown
+          dropdown_choice, _ = ui.dropdown(screen, (20, 250, 200, 36),
+                                           ["Option 1","Option 2","Option 3"],
+                                           dropdown_choice)
+  
+          ui.text(screen, f"Camera zoom: {camera.zoom_level:.2f}", 20, 300)
+          ui.text(screen, f"Beat: {rc.get_beat():.2f}", 20, 340)
+  
+          pygame.display.flip()
+          clock.tick(60)
+  
+      pygame.quit()
+  
+  if __name__ == "__main__":
+      main()
+
+# 이건 이게 piig 사용한거
+  import pygame
+  from piig import UI, ThemeManager, Camera, RhythmClock
+  
+  pygame.init()
+  screen = pygame.display.set_mode((960, 540))
+  pygame.display.set_caption("piig demo")
+  clock = pygame.time.Clock()
+  
+  ui = UI()
+  theme = ThemeManager()
+  camera = Camera()
+  rc = RhythmClock(bpm=120)
+  
+  power_on = True
+  text_value = "Hello"
+  slider_val = 0.5
+  dropdown_choice = "Option 1"
+  
+  running = True
+  while running:
+      events = pygame.event.get()
+      for e in events:
+          if e.type == pygame.QUIT:
+              running = False
+  
+      ui.set_events(events)
+      screen.fill((25, 25, 28))
+  
+      # 라벨 (x,y 따로)
+      ui.text(screen, "piig 1.1.1 Demo", 20, 20)
+  
+      # 버튼 (rect 튜플)
+      if ui.button(screen, 20, 60, 160, 36, "Apply Theme"):
+          theme.apply(ui)
+  
+      # 토글 (rect 튜플)
+      power_on = ui.toggle(screen, "power_toggle", 20, 110, 160, 36, power_on)
+  
+      # 텍스트 박스 (rect 튜플)
+      text_value, _, _ = ui.textbox(screen, "text_box", 20, 160, 200, 36, text_value)
+  
+      # 슬라이더 (rect 튜플)
+      slider_val = ui.slider(screen, 20, 210, 200, 20, slider_val)
+  
+      # 드롭다운 (rect 튜플)
+      dropdown_choice = ui.dropdown(screen, "dropdown", 20, 250, 200,
+                                    ["Option 1", "Option 2", "Option 3"],
+                                    dropdown_choice)
+  
+      # 카메라 / 리듬 시계 상태
+      ui.text(screen, f"Camera zoom: {getattr(camera,'zoom_level',1.0):.2f}", 20, 300)
+      ui.text(screen, f"Beat: {rc.beat():.2f}", 20, 340)
+  
+      pygame.display.flip()
+      clock.tick(60)
+  
+  pygame.quit()
